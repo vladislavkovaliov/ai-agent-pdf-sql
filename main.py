@@ -22,7 +22,7 @@ PERSIST_DIRECTORY = "./data/chroma_db"
 
 @traceable(run_type="llm", metadata={"ls_provider": "ollama", "model": "mistral"})
 def create_qa_agent(pdf_path, model_name="mistral", persist_directory=PERSIST_DIRECTORY):
-    persist_directory = persist_directory
+    persist_directory = persist_directory + "_" + pdf_path.split("/")[-1].split(".")[0]
 
     if os.path.exists(persist_directory):
         logging.info(f"Create a new database: {persist_directory}")
@@ -63,7 +63,7 @@ def create_qa_agent(pdf_path, model_name="mistral", persist_directory=PERSIST_DI
 
         for i, chunk in enumerate(tqdm(splits, desc="Processing chunks"), 1):
             vectorstore.add_documents(
-                documents=[chunk], # [chunk]
+                documents=[chunk],
                 embedding=embeddings,
             )
 
@@ -81,9 +81,9 @@ def create_qa_agent(pdf_path, model_name="mistral", persist_directory=PERSIST_DI
 
     Schema:
     {{
-      "categoryName": string,       // field name Услуга
-      "amount": number,             // field name Сумма (only amount without currency)
-      "createAt": string,           // field name Дата (in DATETIME YYYY-MM-DD HH-MM-SS format)
+      "categoryName": string,       // поле "Услуга"
+      "amount": number,             // поле "Сумма" (only amount without currency)
+      "createAt": string,           // поле "Дата" (in DATETIME YYYY-MM-DD HH-MM-SS format)
     }}
 
     Only extract the **Услуга**, **Дата**, **Сумма** 
@@ -96,6 +96,7 @@ def create_qa_agent(pdf_path, model_name="mistral", persist_directory=PERSIST_DI
     Question:
     {question}
 
+    Before respond make JSON valid.
     Respond only in valid JSON using the schema above.
     """
 
@@ -172,7 +173,8 @@ def ask_question(qa_chain, question):
 def pre_processing_sql_query(payload):
 
     category_id_mapping = {
-        "ЭЛЕКТРИЧЕСТВО": "21",
+        "ЭЛЕКТРИЧЕСТВО": 21,
+        "КОММУНАЛЬНЫЕ-ПЛАТЕЖИ": 24
     }
 
     llm = OllamaLLM(
@@ -219,7 +221,7 @@ def main():
     # You can pull the model using: ollama pull mistral
 
     # Replace with your PDF path
-    pdf_path = "./example.pdf"
+    pdf_path = "./example2.pdf"
 
     if not os.path.exists(pdf_path):
         logging.error(f"The file {pdf_path} does not exist.")
