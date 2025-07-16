@@ -17,6 +17,11 @@
             width: 100%;
         }
 
+        .wrapper-code {
+            background-color: #f5f5f5;
+            padding: 8px;
+        }
+
         pre, code, p {
             font-size: 14px;
         }
@@ -33,14 +38,25 @@
     </style>
 </head>
 <body>
-    <h1>Report of 0</h1>
+    <h1>Report of 3</h1>
     <p>This command need to be run inside SQL.</p>
+    <div class="wrapper-code">
     <pre>
         <code>
 
+ INSERT INTO payments (amount, description, categoryId, locationId)
+VALUES (44.38, 'Электроэнергия (физ.лица) - 2025-06-16 12:59:15', 21, 1);
+
+ INSERT INTO payments (amount, description, categoryId, locationId)
+VALUES (56.16, 'Дополнительные платежи - 2025-06-16 12:59:17', 25, 1);
+
+ INSERT INTO payments (amount, description, categoryId, locationId)
+VALUES (29.21, 'Дополнительные платежи - 2025-06-16 12:59:19', 25, 1);
+
         </code>
     </pre>
+    </div>
 
-    <p>Total: 0</p>
+    <p>Total: 3</p>
 </body>
 </html>

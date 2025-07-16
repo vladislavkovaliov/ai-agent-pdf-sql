@@ -251,9 +251,8 @@ def pre_processing_sql_query(payload):
     ### Category Mapping:
     {category_id_mapping}
     
-    ### Response:
-    Based on your instructions, here is the SQL query:
-    ```sql
+    ### Response (Strict) only with a SQL query:
+    <SQL_QUERY_HERE>
     """)
 
     prompt = prompt_template.format(

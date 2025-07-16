@@ -212,3 +212,9 @@ __marimo__/
 # Chrome
 
 data
+
+# Report
+reports
+
+# HTML
+output.html
