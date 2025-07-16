@@ -6,12 +6,16 @@ requires-python = ">=3.13"
 dependencies = [
     "chromadb>=1.0.13",
     "dotenv>=0.9.9",
+    "jinja2>=3.1.6",
     "langchain>=0.3.26",
     "langchain-chroma>=0.2.4",
     "langchain-community>=0.3.26",
     "langchain-ollama>=0.3.3",
     "langsmith>=0.4.3",
+    "markdown>=3.8.2",
+    "pygments>=2.19.2",
     "pypdf>=5.6.1",
     "python-dotenv>=1.1.1",
     "tqdm>=4.67.1",
+    "weasyprint>=65.1",
 ]

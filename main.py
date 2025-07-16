@@ -1,23 +1,64 @@
 import os
 import logging
 import json
+import re
+import subprocess
+import sys
+import markdown
+
 
 from langchain_community.document_loaders import PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.prompts import PromptTemplate
 from langchain_ollama import OllamaEmbeddings
 from langchain_chroma import Chroma
 from langchain.chains import RetrievalQA
 from langchain_ollama import OllamaLLM
-from langchain.prompts import PromptTemplate
+# from langchain
+from weasyprint import HTML
 from langsmith import traceable
-from tqdm import tqdm
+from datetime import datetime, date
 from dotenv import load_dotenv
+from jinja2 import Environment, FileSystemLoader, Template
+from tqdm import tqdm
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.CRITICAL, format='%(asctime)s - %(levelname)s - %(message)s')
 
-BASE_URL = "http://192.168.1.141:11434"
+# BASE_URL = "http://192.168.1.141:11434"
+BASE_URL = "http://192.168.1.70:11434"
 PERSIST_DIRECTORY = "./data/chroma_db"
+
+sql_command_list = []
+
+PATH_HTML_FILE = "./output.html"
+
+def write_html_to_file(html, path = PATH_HTML_FILE):
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(html)
+
+def render_html(sql_scripts):
+    env = Environment(loader=FileSystemLoader("templates"))
+    template = env.get_template("template.html")
+    scripts = [item["sql"] for item in sql_scripts]
+
+    rendered_html = template.render(
+        title="Мой сайт",
+        heading="Список задач",
+        sql_scripts=scripts
+    )
+
+    return rendered_html
+
+def convert_html_to_pdf(html_content, path = f"./reports/report_{datetime.now().strftime("%d.%m.%Y_%H-%M-%S")}.pdf"):
+    HTML(string=html_content).write_pdf(path)
+
+
+def clean_json(json_str):
+    json_str = re.sub(r'//.*', '', json_str)
+    json_str = re.sub(r'/\*.*?\*/', '', json_str, flags=re.DOTALL)
+
+    return json_str
 
 
 @traceable(run_type="llm", metadata={"ls_provider": "ollama", "model": "mistral"})
@@ -96,8 +137,9 @@ def create_qa_agent(pdf_path, model_name="mistral", persist_directory=PERSIST_DI
     Question:
     {question}
 
-    Before respond make JSON valid.
-    Respond only in valid JSON using the schema above.
+    Respond only in valid JSON using the schema above. 
+    The JSON **must not contain any comments, explanations, or annotations**.
+    Only output raw JSON. Do not add any `//` or `/* */` style comments.
     """
 
     prompt = PromptTemplate(
@@ -169,12 +211,16 @@ def ask_question(qa_chain, question):
         }
 
 
-@traceable(run_type="llm", metadata={"ls_provider": "ollama", "model": "sqlcoder"})
+@traceable(run_type="llm", metadata={"ls_provider": "ollama", "model": "mistral"})
 def pre_processing_sql_query(payload):
-
     category_id_mapping = {
-        "ЭЛЕКТРИЧЕСТВО": 21,
-        "КОММУНАЛЬНЫЕ-ПЛАТЕЖИ": 24
+        "КОММУНАЛЬНЫЕ-ПЛАТЕЖИ": 24,
+        "КОММУНАЛКА": 22,
+        "Дополнительные платежи": 25,
+        "Электроэнергия (физ.лица)": 21,
+        "Интернет, ТВ": 27,
+        "МТС": 28,
+        "Центральный парк-Паркинг-2": 30
     }
 
     llm = OllamaLLM(
@@ -184,23 +230,27 @@ def pre_processing_sql_query(payload):
 
     prompt_template = PromptTemplate.from_template("""
     ### Instructions:
+
+    You are a SQL generator. Extract values from JSON payload: categoryName, createAt, amount.
     
-    ### Input:
-    Extract values from JSON payload: categoryName, createAt, amount, generate insert SQL-script based on template.
-    Match category name to category id based on mapping category name to category id. 
-    In description insert categoryName and createAt.    
-    This query will run on a database whose schema is represented in this string:
+    Then generate an SQL INSERT statement using the provided template.
     
-    SQL template:
-    INSERT INTO payments (amount, description, currency, paymentMethod, categoryId, locationId) 
+    **IMPORTANT:**
+    - Generate an SQL INSERT statement using the provided template.
+    - Do not return extra commentary — only a valid SQL query inside a code block.
+    - The *description* value should be filled by categoryName - createAt
+    - 
+    
+    ### SQL Template:
+    INSERT INTO payments (amount, description, currency, paymentMethod, categoryId, locationId)
     VALUES (?, '', 'BYN', 'ONLINE', ?, 1);
     
-    JSON:
+    ### JSON Input:
     {payload}
     
-    Mapping category name to category id:
+    ### Category Mapping:
     {category_id_mapping}
-
+    
     ### Response:
     Based on your instructions, here is the SQL query:
     ```sql
@@ -213,41 +263,45 @@ def pre_processing_sql_query(payload):
 
     sql_script = llm.invoke(prompt)
 
-    print(f"SQL script:\n {sql_script}")
+    return sql_script
 
 
-def main():
-    # Ensure Ollama is running and the model is pulled
-    # You can pull the model using: ollama pull mistral
-
-    # Replace with your PDF path
-    pdf_path = "./example2.pdf"
-
-    if not os.path.exists(pdf_path):
-        logging.error(f"The file {pdf_path} does not exist.")
+def main(path):
+    if not os.path.exists(path):
+        logging.error(f"The file {path} does not exist.")
 
         return None
 
     # Create the QA agent
-    qa_agent = create_qa_agent(pdf_path)
+    qa_agent = create_qa_agent(path)
 
     # Ask questions from the user
     try:
-        response = qa_agent.invoke(
-            {"query": "Extract the patient's full name and the date of the medical event from this PDF."})
+        response = qa_agent.invoke({
+            "query": "Extract the values for service name (category), amount (number only), and date (in YYYY-MM-DD HH:MM:SS format) from this document"
+        })
 
         raw_output = response["result"]
 
         try:
-            parsed = json.loads(raw_output)
+            cleaned_output = clean_json(raw_output)
+            parsed = json.loads(cleaned_output)
         except json.JSONDecodeError:
             parsed = {"error": "Invalid JSON", "raw_output": raw_output}
 
         # Prepare data to sql script
-        pre_processing_sql_query(parsed)
+        sql_script = pre_processing_sql_query(parsed)
 
-        print("\n")
-        print(f"Json data:\n {parsed}")
+        print(f"SQL script:\n {sql_script}")
+        print(f"Json data:\n {parsed}\n")
+
+        sql_command_list.append({
+            "sql": sql_script,
+            "json": parsed,
+            "path": path,
+        })
+
+
     except Exception as e:
         logging.error(f"An error occurred: {str(e)}")
 
@@ -261,4 +315,15 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    file_path = sys.argv[1]
+
+    print(f"Processing files {sys.argv[1:]}")
+
+    for path in sys.argv[1:]:
+        main(path)
+
+    render_html = render_html(sql_scripts=sql_command_list)
+
+    write_html_to_file(render_html)
+
+    convert_html_to_pdf(render_html)
